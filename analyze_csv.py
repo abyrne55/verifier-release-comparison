@@ -24,4 +24,4 @@ with open(sys.argv[1], newline="", encoding="utf-8") as f:
         cvrs.append(ClusterVerifierRecord.from_dict(row))
 
 for cvr in cvrs:
-    print(vars(cvr))
+    print(repr(cvr))

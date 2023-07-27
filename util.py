@@ -11,14 +11,14 @@ def csv_bool_to_bool(csv_bool_str):
     return None
 
 
-def is_nully(s):
+def is_nully_str(s):
     """
     Returns True if s is None, an empty or whitespace-filled string, or some variation of "NULL"
     """
     if s is None:
         return True
     s_strip = s.lower().strip()
-    return s_strip == "" or s_strip == "null"
+    return s_strip in ["", "null"]
 
 
 def is_valid_url(url):

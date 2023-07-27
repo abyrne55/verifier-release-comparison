@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from util import csv_bool_to_bool, is_nully, is_valid_url
+from util import csv_bool_to_bool, is_nully_str, is_valid_url
 
 
 class OCMState(Enum):
@@ -25,6 +25,20 @@ class OCMState(Enum):
     RESUMING = "resuming"
     HIBERNATING = "hibernating"
 
+    def is_transient(self):
+        """
+        Returns True if representing a "non-steady state" (e.g., installing, validating)
+        """
+        return self not in [
+            self.READY,
+            self.ERROR,
+            self.UNINSTALLING,
+            self.HIBERNATING,
+        ]
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}.{self.name}>"
+
 
 class InFlightState(Enum):
     """
@@ -36,6 +50,9 @@ class InFlightState(Enum):
     RUNNING = "running"
     PASSED = "passed"
     FAILED = "failed"
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}.{self.name}>"
 
 
 class ClusterVerifierRecord:
@@ -63,22 +80,23 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
-    def is_transient(self):
-        """
-        Returns True if cluster is in a "non-steady state" (e.g., installing, validating)
-        """
-        return self.ocm_state not in [
-            OCMState.READY,
-            OCMState.ERROR,
-            OCMState.UNINSTALLING,
-            OCMState.HIBERNATING,
-        ]
-
     def __gt__(self, other):
         return self.timestamp > other.timestamp
 
     def __lt__(self, other):
         return self.timestamp < other.timestamp
+
+    def __repr__(self):
+        in_flight_str = ""
+        if self.ocm_inflight_states is not None:
+            in_flight_str = (
+                f"[{''.join(repr(s)+',' for s in self.ocm_inflight_states)}]"
+            )
+        return (
+            f"<CVR.{self.cid if self.cname is None else self.cname} "
+            f"{'' if self.ocm_state is None else repr(self.ocm_state)} "
+            f"{in_flight_str}>"
+        )
 
     @classmethod
     def from_dict(cls, in_dict: dict[str, str]):
@@ -87,14 +105,14 @@ class ClusterVerifierRecord:
         # Mandatory Fields
         timestamp = datetime.fromisoformat(in_dict["timestamp"].replace("Z", "+00:00"))
         cid = in_dict["cid"].strip()
-        if is_nully(cid):
+        if is_nully_str(cid):
             raise ValueError(
                 "Cannot create ClusterVerifierRecord without cluster ID (cid)"
             )
 
         # Optional Fields
         try:
-            cname = None if is_nully(in_dict["cname"]) else in_dict["cname"].strip()
+            cname = None if is_nully_str(in_dict["cname"]) else in_dict["cname"].strip()
             found_verifier_s3_logs = csv_bool_to_bool(in_dict["found_verifier_s3_logs"])
             found_all_tests_passed = csv_bool_to_bool(in_dict["found_all_tests_passed"])
             found_egress_failures = csv_bool_to_bool(in_dict["found_egress_failures"])
@@ -107,11 +125,11 @@ class ClusterVerifierRecord:
 
         # Finish processing "strictly typed" fields (these will raise their own exceptions)
         ocm_state = None
-        if not is_nully(ocm_state_str):
+        if not is_nully_str(ocm_state_str):
             ocm_state = OCMState(ocm_state_str)
 
         ocm_inflight_states = None
-        if not is_nully(ocm_inflight_states_str):
+        if not is_nully_str(ocm_inflight_states_str):
             ocm_inflight_states = list(
                 InFlightState(s) for s in json.loads(in_dict["ocm_inflight_states"])
             )
