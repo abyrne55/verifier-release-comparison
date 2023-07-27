@@ -17,11 +17,28 @@ from models import ClusterVerifierRecord
 # }
 # print(vars(ClusterVerifierRecord.from_dict(test_dict)))
 
-cvrs = []
+
+cvrs = {}
 with open(sys.argv[1], newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
     for row in reader:
-        cvrs.append(ClusterVerifierRecord.from_dict(row))
+        cvr = ClusterVerifierRecord.from_dict(row)
+        # TODO consider moving logic below into something like old_cvr.overlay(new_cvr)
+        try:
+            # Only do things if this is the newest CVR we've seen for this cluster ID
+            if cvr > cvrs[cvr.cid]:
+                # We already have an older record of this
+                # Suspect deletion if the old CVR complete but new CVR incomplete
+                if not cvrs[cvr.cid].is_incomplete() and cvr.is_incomplete():
+                    cvrs[cvr.cid].suspect_deleted = True
+                    continue
+                # New record looks at least as complete as the old; overwrite
+                cvrs[cvr.cid] = cvr
+        except KeyError:
+            # First time we're seeing a CVR for this cluster ID; store it
+            cvrs[cvr.cid] = cvr
 
-for cvr in cvrs:
-    print(repr(cvr))
+for cid, cvr in cvrs.items():
+    print(cid + ": " + repr(cvr))
+
+print(len(cvrs))

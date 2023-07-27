@@ -79,6 +79,14 @@ class ClusterVerifierRecord:
         self.found_all_tests_passed = found_all_tests_passed
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
+        # TODO implement "reached_ready_state" or "install_succeeded"
+
+        # suspected_deleted will be set to True if this record is seen disappearing from OCM
+        self.suspect_deleted = False
+
+    def is_incomplete(self):
+        """Returns True if the CVR is missing information usually obtained from OCM"""
+        return [self.cname, self.ocm_state, self.ocm_inflight_states] == [None] * 3
 
     def __gt__(self, other):
         return self.timestamp > other.timestamp
@@ -95,7 +103,8 @@ class ClusterVerifierRecord:
         return (
             f"<CVR.{self.cid if self.cname is None else self.cname} "
             f"{'' if self.ocm_state is None else repr(self.ocm_state)} "
-            f"{in_flight_str}>"
+            f"{in_flight_str}{'!INC!' if self.is_incomplete() else ''}"
+            f"{'!DEL!' if self.suspect_deleted else ''}>"
         )
 
     @classmethod
