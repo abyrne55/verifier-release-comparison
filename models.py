@@ -37,7 +37,7 @@ class OCMState(Enum):
         ]
 
     def __repr__(self):
-        return f"<{self.__class__.__name__}.{self.name}>"
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 class InFlightState(Enum):
@@ -52,7 +52,7 @@ class InFlightState(Enum):
     FAILED = "failed"
 
     def __repr__(self):
-        return f"<{self.__class__.__name__}.{self.name}>"
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 class ClusterVerifierRecord:
