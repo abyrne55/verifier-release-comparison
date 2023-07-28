@@ -2,7 +2,7 @@
 import csv
 import sys
 
-from models import ClusterVerifierRecord
+from models import ClusterVerifierRecord, OCMState, InFlightState, Outcome
 
 # test_dict = {
 #     'timestamp': "2023-07-26T01:22:03Z",
@@ -29,7 +29,22 @@ with open(sys.argv[1], newline="", encoding="utf-8") as f:
             # First time we're seeing a CVR for this cluster ID; store it
             cvrs[cvr.cid] = cvr
 
-for cid, cvr in cvrs.items():
-    print(cid + ": " + repr(cvr))
 
-print(len(cvrs))
+print(f"Total deduplicated records: {len(cvrs)}")
+
+outcomes = {}
+
+for _, cvr in cvrs.items():
+    try:
+        outcomes[cvr.get_outcome()].append(cvr)
+    except KeyError:
+        outcomes[cvr.get_outcome()] = [cvr]
+
+for oc in outcomes:
+    print(f"{oc}: {len(outcomes[oc])}")
+
+fdr = len(outcomes[Outcome.FALSE_POSITIVE]) / (
+    len(outcomes[Outcome.FALSE_POSITIVE]) + len(outcomes[Outcome.TRUE_POSITIVE])
+)
+
+print(f"FDR: {fdr:.1%}")

@@ -1,7 +1,7 @@
 """Data models for verifier log analysis"""
 import json
 from datetime import datetime
-from enum import Enum, IntEnum
+from enum import auto, Enum, IntEnum
 from typing import Optional
 
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
@@ -57,6 +57,15 @@ class InFlightState(Enum):
         return f"{self.__class__.__name__}.{self.name}"
 
 
+class Outcome(Enum):
+    """Statistical outcomes"""
+
+    TRUE_NEGATIVE = auto()
+    TRUE_POSITIVE = auto()
+    FALSE_NEGATIVE = auto()
+    FALSE_POSITIVE = auto()
+
+
 class ClusterVerifierRecord:
     """Represents a single row in the CSV"""
 
@@ -83,14 +92,45 @@ class ClusterVerifierRecord:
         self.log_download_url = log_download_url
 
         # reached_states keeps track of all states in which we've seen this cluster
-        self.reached_states = set([self.ocm_state])
+        self.reached_states = set()
+        if self.ocm_state is not None:
+            self.reached_states.update([self.ocm_state])
 
         # suspected_deleted will be set to True if this record is seen disappearing from OCM
         self.suspect_deleted = False
 
-    def is_incomplete(self):
+    def is_incomplete(self) -> bool:
         """Returns True if the CVR is missing information usually obtained from OCM"""
         return [self.cname, self.ocm_state, self.ocm_inflight_states] == [None] * 3
+
+    def get_outcome(self) -> Outcome:
+        if (
+            self.is_incomplete()
+            or len(self.reached_states) == 0
+            or len(self.ocm_inflight_states) == 0
+        ):
+            return None
+        if (
+            OCMState.READY in self.reached_states
+            and InFlightState.PASSED in self.ocm_inflight_states
+        ):
+            return Outcome.TRUE_NEGATIVE
+        if (
+            OCMState.READY not in self.reached_states
+            and InFlightState.PASSED not in self.ocm_inflight_states
+        ):
+            return Outcome.TRUE_POSITIVE
+        if (
+            OCMState.READY not in self.reached_states
+            and InFlightState.PASSED in self.ocm_inflight_states
+        ):
+            return Outcome.FALSE_NEGATIVE
+        if (
+            OCMState.READY in self.reached_states
+            and InFlightState.PASSED not in self.ocm_inflight_states
+        ):
+            return Outcome.FALSE_POSITIVE
+        return None
 
     def __add__(self, other):
         """
