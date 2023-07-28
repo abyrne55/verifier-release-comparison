@@ -43,8 +43,20 @@ for _, cvr in cvrs.items():
 for oc in outcomes:
     print(f"{oc}: {len(outcomes[oc])}")
 
-fdr = len(outcomes[Outcome.FALSE_POSITIVE]) / (
-    len(outcomes[Outcome.FALSE_POSITIVE]) + len(outcomes[Outcome.TRUE_POSITIVE])
-)
+tp = len(outcomes[Outcome.TRUE_POSITIVE])
+tn = len(outcomes[Outcome.TRUE_NEGATIVE])
+fn = len(outcomes[Outcome.FALSE_NEGATIVE])
+fp = len(outcomes[Outcome.FALSE_POSITIVE])
 
-print(f"FDR: {fdr:.1%}")
+fdr = fp / (fp + tp)
+fpr = fp / (fp + tn)
+f1 = (2 * tp) / (2 * tp + fp + fn)
+acc = (tp + tn) / (tp + tn + fp + fn)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+specificity = tn / (tn + fp)
+
+print(
+    f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | Recall (sensitivity): {recall:.1%}"
+)
+print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
