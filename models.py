@@ -1,29 +1,31 @@
 """Data models for verifier log analysis"""
 import json
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Optional
 
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
 
 
-class OCMState(Enum):
+class OCMState(IntEnum):
     """
     States in which an OCM cluster could be, according to
     https://gitlab.cee.redhat.com/service/uhc-clusters-service/-/blob/master/pkg/models/clusters.go
+
+    Int values are assigned such that states can only progress to a greater value
     """
 
-    VALIDATING = "validating"
-    WAITING = "waiting"
-    PENDING = "pending"
-    INSTALLING = "installing"
-    READY = "ready"
-    ERROR = "error"
-    UNINSTALLING = "uninstalling"
-    UNKNOWN = "unknown"
-    POWERING_DOWN = "powering_down"
-    RESUMING = "resuming"
-    HIBERNATING = "hibernating"
+    WAITING = 0
+    PENDING = 1
+    VALIDATING = 2
+    INSTALLING = 3
+    READY = 4
+    ERROR = 5
+    UNINSTALLING = 6
+    POWERING_DOWN = 7
+    HIBERNATING = 8
+    RESUMING = 9
+    UNKNOWN = 100
 
     def is_transient(self):
         """
@@ -79,7 +81,9 @@ class ClusterVerifierRecord:
         self.found_all_tests_passed = found_all_tests_passed
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
-        # TODO implement "reached_ready_state" or "install_succeeded"
+
+        # reached_states keeps track of all states in which we've seen this cluster
+        self.reached_states = set([self.ocm_state])
 
         # suspected_deleted will be set to True if this record is seen disappearing from OCM
         self.suspect_deleted = False
@@ -88,13 +92,48 @@ class ClusterVerifierRecord:
         """Returns True if the CVR is missing information usually obtained from OCM"""
         return [self.cname, self.ocm_state, self.ocm_inflight_states] == [None] * 3
 
+    def __add__(self, other):
+        """
+        Adding two records together produces the "most current" set of info from both.
+        """
+        greater_cvr = max(self, other)
+        lesser_cvr = min(self, other)
+
+        if greater_cvr.is_incomplete() and not lesser_cvr.is_incomplete():
+            lesser_cvr.suspect_deleted = True
+            lesser_cvr.timestamp = greater_cvr.timestamp
+            return lesser_cvr
+
+        greater_cvr.reached_states.update(lesser_cvr.reached_states)
+        return greater_cvr
+
     def __gt__(self, other):
-        return self.timestamp > other.timestamp
+        """
+        We consider another CVR to be "greater" if it's newer or is same age and has a greater-or-equal OCMState
+        """
+        try:
+            if self.cid != other.cid:
+                raise ArithmeticError(
+                    f"Cannot compare {self.__class__.__name__}s with different cluster IDs"
+                )
+            return self.timestamp > other.timestamp or (
+                self.timestamp >= other.timestamp and self.ocm_state > other.ocm_state
+            )
+        except (AttributeError, TypeError) as exc:
+            raise ArithmeticError(
+                f"Cannot operate {self.__class__.__name__} against other types"
+            ) from exc
 
     def __lt__(self, other):
-        return self.timestamp < other.timestamp
+        """Defined so that we can use functions like max() and sort()"""
+        return not self > other
 
     def __repr__(self):
+        reached_states_str = ""
+        if len(self.reached_states) > 0:
+            reached_states_str = (
+                f"[{''.join(repr(s)+',' for s in self.reached_states)}]"
+            )
         in_flight_str = ""
         if self.ocm_inflight_states is not None:
             in_flight_str = (
@@ -103,6 +142,7 @@ class ClusterVerifierRecord:
         return (
             f"<CVR.{self.cid if self.cname is None else self.cname} "
             f"{'' if self.ocm_state is None else repr(self.ocm_state)} "
+            f"{reached_states_str} "
             f"{in_flight_str}{'!INC!' if self.is_incomplete() else ''}"
             f"{'!DEL!' if self.suspect_deleted else ''}>"
         )
@@ -125,7 +165,7 @@ class ClusterVerifierRecord:
             found_verifier_s3_logs = csv_bool_to_bool(in_dict["found_verifier_s3_logs"])
             found_all_tests_passed = csv_bool_to_bool(in_dict["found_all_tests_passed"])
             found_egress_failures = csv_bool_to_bool(in_dict["found_egress_failures"])
-            ocm_state_str = in_dict["ocm_state"].lower().strip()
+            ocm_state_str = in_dict["ocm_state"].upper().strip()
             ocm_inflight_states_str = in_dict["ocm_inflight_states"].strip()
         except AttributeError as exc:
             # .strip()/.lower() will raise AttributeError for non-str types, but we
@@ -135,7 +175,7 @@ class ClusterVerifierRecord:
         # Finish processing "strictly typed" fields (these will raise their own exceptions)
         ocm_state = None
         if not is_nully_str(ocm_state_str):
-            ocm_state = OCMState(ocm_state_str)
+            ocm_state = OCMState[ocm_state_str]
 
         ocm_inflight_states = None
         if not is_nully_str(ocm_inflight_states_str):
