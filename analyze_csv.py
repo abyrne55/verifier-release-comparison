@@ -43,6 +43,8 @@ for _, cvr in cvrs.items():
 for oc in outcomes:
     print(f"{oc}: {len(outcomes[oc])}")
 
+# Statistical Measures
+# See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
 tp = len(outcomes[Outcome.TRUE_POSITIVE])
 tn = len(outcomes[Outcome.TRUE_NEGATIVE])
 fn = len(outcomes[Outcome.FALSE_NEGATIVE])
@@ -60,3 +62,7 @@ print(
     f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | Recall (sensitivity): {recall:.1%}"
 )
 print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
+
+print("False Positives")
+for cvr in outcomes[Outcome.FALSE_POSITIVE]:
+    print(f"{cvr.log_download_url} : {repr(cvr)}")
