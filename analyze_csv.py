@@ -2,7 +2,7 @@
 import csv
 import sys
 
-from models import ClusterVerifierRecord
+from models import ClusterVerifierRecord, OCMState, InFlightState, Outcome
 
 # test_dict = {
 #     'timestamp': "2023-07-26T01:22:03Z",
@@ -23,22 +23,46 @@ with open(sys.argv[1], newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
     for row in reader:
         cvr = ClusterVerifierRecord.from_dict(row)
-        # TODO consider moving logic below into something like old_cvr.overlay(new_cvr)
         try:
-            # Only do things if this is the newest CVR we've seen for this cluster ID
-            if cvr > cvrs[cvr.cid]:
-                # We already have an older record of this
-                # Suspect deletion if the old CVR complete but new CVR incomplete
-                if not cvrs[cvr.cid].is_incomplete() and cvr.is_incomplete():
-                    cvrs[cvr.cid].suspect_deleted = True
-                    continue
-                # New record looks at least as complete as the old; overwrite
-                cvrs[cvr.cid] = cvr
+            cvrs[cvr.cid] += cvr
         except KeyError:
             # First time we're seeing a CVR for this cluster ID; store it
             cvrs[cvr.cid] = cvr
 
-for cid, cvr in cvrs.items():
-    print(cid + ": " + repr(cvr))
 
-print(len(cvrs))
+print(f"Total deduplicated records: {len(cvrs)}")
+
+outcomes = {}
+
+for _, cvr in cvrs.items():
+    try:
+        outcomes[cvr.get_outcome()].append(cvr)
+    except KeyError:
+        outcomes[cvr.get_outcome()] = [cvr]
+
+for oc in outcomes:
+    print(f"{oc}: {len(outcomes[oc])}")
+
+# Statistical Measures
+# See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
+tp = len(outcomes[Outcome.TRUE_POSITIVE])
+tn = len(outcomes[Outcome.TRUE_NEGATIVE])
+fn = len(outcomes[Outcome.FALSE_NEGATIVE])
+fp = len(outcomes[Outcome.FALSE_POSITIVE])
+
+fdr = fp / (fp + tp)
+fpr = fp / (fp + tn)
+f1 = (2 * tp) / (2 * tp + fp + fn)
+acc = (tp + tn) / (tp + tn + fp + fn)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+specificity = tn / (tn + fp)
+
+print(
+    f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | Recall (sensitivity): {recall:.1%}"
+)
+print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
+
+print("False Positives")
+for cvr in outcomes[Outcome.FALSE_POSITIVE]:
+    print(f"{cvr.log_download_url} : {repr(cvr)}")
