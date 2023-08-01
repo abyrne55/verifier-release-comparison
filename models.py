@@ -8,11 +8,8 @@ from typing import Optional
 import htmllistparse
 import requests
 
+import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
-
-
-REMOTE_LOG_FILE_NAME = "osd-network-verifier-logs.txt"
-REMOTE_LOG_EGRESS_REGEX = re.compile(r"egressURL error\: ([\w\-\.]+\:\d+)")
 
 
 class OCMState(IntEnum):
@@ -77,6 +74,10 @@ class Outcome(Enum):
 class ClusterVerifierRecord:
     """Represents a single row in the CSV"""
 
+    remote_log_regex = re.compile(settings.REMOTE_LOG_REGEX_PATTERN)
+    remote_log_file_name = settings.REMOTE_LOG_FILE_NAME
+    remote_log_auth = settings.REMOTE_LOG_AUTH
+
     def __init__(
         self,
         timestamp: datetime,
@@ -137,19 +138,24 @@ class ClusterVerifierRecord:
             OCMState.READY in self.reached_states
             and InFlightState.PASSED not in self.ocm_inflight_states
         ):
+            # This *might* be a false positive; check if egresses contain
             return Outcome.FALSE_POSITIVE
         return None
 
     def get_egress_failures(self) -> set[str]:
         """Parses the log files stored in log_download_url for the domains that were blocked"""
-        _, listing = htmllistparse.fetch_listing(self.log_download_url, timeout=5)
+        _, listing = htmllistparse.fetch_listing(
+            self.log_download_url, timeout=5, auth=self.remote_log_auth
+        )
         subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
         egress_failures = set()
         for subnet in subnets:
             log = requests.get(
-                self.log_download_url + subnet + REMOTE_LOG_FILE_NAME, timeout=5
+                self.log_download_url + subnet + self.remote_log_file_name,
+                timeout=5,
+                auth=self.remote_log_auth,
             ).text
-            egress_failures.update(re.findall(REMOTE_LOG_EGRESS_REGEX, log))
+            egress_failures.update(re.findall(self.remote_log_regex, log))
         return egress_failures
 
     def __add__(self, other):
