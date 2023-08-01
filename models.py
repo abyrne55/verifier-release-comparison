@@ -77,6 +77,7 @@ class ClusterVerifierRecord:
     remote_log_regex = re.compile(settings.REMOTE_LOG_REGEX_PATTERN)
     remote_log_file_name = settings.REMOTE_LOG_FILE_NAME
     remote_log_auth = settings.REMOTE_LOG_AUTH
+    force_failure_endpoints = settings.FORCE_FAILURE_ENDPOINTS
 
     def __init__(
         self,
@@ -100,6 +101,9 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
+        # egress_failures will keep track of the unreachable egress endpoints
+        self.__egress_failures = None
+
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
         if self.ocm_state is not None:
@@ -113,6 +117,7 @@ class ClusterVerifierRecord:
         return [self.cname, self.ocm_state, self.ocm_inflight_states] == [None] * 3
 
     def get_outcome(self) -> Outcome:
+        """Calculate the statistical outcome of this (assumed completed) test record"""
         if (
             self.is_incomplete()
             or len(self.reached_states) == 0
@@ -138,25 +143,32 @@ class ClusterVerifierRecord:
             OCMState.READY in self.reached_states
             and InFlightState.PASSED not in self.ocm_inflight_states
         ):
-            # This *might* be a false positive; check if egresses contain
+            # This *might* be a false positive; check if failed egress endpoints contain
+            # a force-failure endpoint
+            ff_endpoints = self.get_egress_failures() & self.force_failure_endpoints
+            if len(ff_endpoints) > 0:
+                return Outcome.TRUE_POSITIVE
             return Outcome.FALSE_POSITIVE
         return None
 
     def get_egress_failures(self) -> set[str]:
         """Parses the log files stored in log_download_url for the domains that were blocked"""
-        _, listing = htmllistparse.fetch_listing(
-            self.log_download_url, timeout=5, auth=self.remote_log_auth
-        )
-        subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
-        egress_failures = set()
-        for subnet in subnets:
-            log = requests.get(
-                self.log_download_url + subnet + self.remote_log_file_name,
-                timeout=5,
-                auth=self.remote_log_auth,
-            ).text
-            egress_failures.update(re.findall(self.remote_log_regex, log))
-        return egress_failures
+        if self.__egress_failures is None:
+            _, listing = htmllistparse.fetch_listing(
+                self.log_download_url, timeout=5, auth=self.remote_log_auth
+            )
+            subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
+            egress_failures = set()
+            for subnet in subnets:
+                log = requests.get(
+                    self.log_download_url + subnet + self.remote_log_file_name,
+                    timeout=5,
+                    auth=self.remote_log_auth,
+                ).text
+                egress_failures.update(re.findall(self.remote_log_regex, log))
+            # Cache the result
+            self.__egress_failures = egress_failures
+        return self.__egress_failures
 
     def __add__(self, other):
         """
