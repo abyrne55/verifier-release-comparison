@@ -65,4 +65,4 @@ print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
 
 print("False Positives")
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
-    print(f"{cvr.log_download_url} : {repr(cvr)}")
+    print(f"{cvr.log_download_url} : {repr(cvr)} {repr(cvr.get_egress_failures())}")
