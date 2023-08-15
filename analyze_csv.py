@@ -17,7 +17,6 @@ from models import ClusterVerifierRecord, OCMState, InFlightState, Outcome
 # }
 # print(vars(ClusterVerifierRecord.from_dict(test_dict)))
 
-
 cvrs = {}
 with open(sys.argv[1], newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
@@ -64,5 +63,13 @@ print(
 print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
 
 print("False Positives")
+fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
     print(f"{cvr.log_download_url} : {repr(cvr)} {repr(cvr.get_egress_failures())}")
+    for ep in cvr.get_egress_failures():
+        try:
+            fp_endpoints[ep] += 1
+        except KeyError:
+            fp_endpoints[ep] = 1
+
+print(repr(fp_endpoints))
