@@ -49,6 +49,10 @@ tn = len(outcomes[Outcome.TRUE_NEGATIVE])
 fn = len(outcomes[Outcome.FALSE_NEGATIVE])
 fp = len(outcomes[Outcome.FALSE_POSITIVE])
 
+print(
+    f"True Negatives,{tn}\nFalse Negatives,{fn}\nTrue Positives,{tp}\nFalse Positives,{fp}"
+)
+
 fdr = fp / (fp + tp)
 fpr = fp / (fp + tn)
 f1 = (2 * tp) / (2 * tp + fp + fn)
@@ -65,7 +69,9 @@ print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
 print("False Positives")
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
-    print(f"{cvr.log_download_url} : {repr(cvr)} {repr(cvr.get_egress_failures())}")
+    print(
+        f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)} {repr(cvr.get_egress_failures())}"
+    )
     for ep in cvr.get_egress_failures():
         try:
             fp_endpoints[ep] += 1

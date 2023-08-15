@@ -104,6 +104,9 @@ class ClusterVerifierRecord:
         # egress_failures will keep track of the unreachable egress endpoints
         self.__egress_failures = None
 
+        # hostedcluster will keep track of this cluster's hypershift status
+        self.__hostedcluster = None
+
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
         if self.ocm_state is not None:
@@ -169,6 +172,20 @@ class ClusterVerifierRecord:
             # Cache the result
             self.__egress_failures = egress_failures
         return self.__egress_failures
+
+    def is_hostedcluster(self) -> bool:
+        """
+        Parses the OCM description file stored in log_download_url and returns True if
+        this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled")
+        """
+        if self.__hostedcluster is None:
+            desc = requests.get(
+                self.log_download_url + "desc.json",
+                timeout=5,
+                auth=self.remote_log_auth,
+            ).json()
+            self.__hostedcluster = bool(desc["hypershift"]["enabled"])
+        return self.__hostedcluster
 
     def __add__(self, other):
         """
