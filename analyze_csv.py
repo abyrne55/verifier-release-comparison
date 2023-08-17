@@ -2,20 +2,7 @@
 import csv
 import sys
 
-from models import ClusterVerifierRecord, OCMState, InFlightState, Outcome
-
-# test_dict = {
-#     'timestamp': "2023-07-26T01:22:03Z",
-#     'cid': "myfancyclusterid",
-#     'cname': "fancy-cluster",
-#     'ocm_state': "ready",
-#     'ocm_inflight_states': "[\"passed\",\"failed\"]",
-#     'found_verifier_s3_logs': "TRUE",
-#     'found_all_tests_passed': "FALSE",
-#     'found_egress_failures': "NULL",
-#     'log_download_url': "example.com/logs/dwYEaJQ0Og/"
-# }
-# print(vars(ClusterVerifierRecord.from_dict(test_dict)))
+from models import ClusterVerifierRecord, Outcome
 
 cvrs = {}
 with open(sys.argv[1], newline="", encoding="utf-8") as f:
@@ -39,6 +26,7 @@ for _, cvr in cvrs.items():
     except KeyError:
         outcomes[cvr.get_outcome()] = [cvr]
 
+# pylint: disable=consider-using-dict-items
 for oc in outcomes:
     print(f"{oc}: {len(outcomes[oc])}")
 
@@ -62,7 +50,8 @@ recall = tp / (tp + fn)
 specificity = tn / (tn + fp)
 
 print(
-    f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | Recall (sensitivity): {recall:.1%}"
+    f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | "
+    f"Recall (sensitivity): {recall:.1%}"
 )
 print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
 
@@ -70,7 +59,8 @@ print("False Positives")
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
     print(
-        f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)} {repr(cvr.get_egress_failures())}"
+        f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)}"
+        f"{repr(cvr.get_egress_failures())}"
     )
     for ep in cvr.get_egress_failures():
         try:
