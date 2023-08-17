@@ -63,18 +63,20 @@ class InFlightState(Enum):
 
 
 class Outcome(Enum):
-    """Statistical outcomes"""
+    """Statistical and error outcomes"""
 
     TRUE_NEGATIVE = auto()
     TRUE_POSITIVE = auto()
     FALSE_NEGATIVE = auto()
     FALSE_POSITIVE = auto()
+    ERROR = auto()
 
 
 class ClusterVerifierRecord:
     """Represents a single row in the CSV"""
 
-    remote_log_regex = re.compile(settings.REMOTE_LOG_REGEX_PATTERN)
+    remote_log_egress_regex = re.compile(settings.REMOTE_LOG_EGRESS_REGEX_PATTERN)
+    remote_log_error_regex = re.compile(settings.REMOTE_LOG_ERROR_REGEX_PATTERN)
     remote_log_file_name = settings.REMOTE_LOG_FILE_NAME
     remote_log_auth = settings.REMOTE_LOG_AUTH
     force_failure_endpoints = settings.FORCE_FAILURE_ENDPOINTS
@@ -151,19 +153,36 @@ class ClusterVerifierRecord:
             ff_endpoints = self.get_egress_failures() & self.force_failure_endpoints
             if len(ff_endpoints) > 0:
                 return Outcome.TRUE_POSITIVE
+
+            # Now check if logs contain an error
+            if len(self.get_errors()) > 0:
+                return Outcome.ERROR
+
+            # Finished check edge cases, so it must be a genuine false positive
             return Outcome.FALSE_POSITIVE
         return None
 
+    def get_errors(self) -> set[str]:
+        """Parse downloaded logs for error messages"""
+        # Trigger log download if necessary
+        self.__download_logs()
+
+        # Iterate over each subnet's logs and populate set with blocked egresses
+        errors = set()
+        for _, log in self.__logs.items():
+            errors.update(re.findall(self.remote_log_error_regex, log))
+
+        return errors
+
     def get_egress_failures(self) -> set[str]:
         """Parses the log files for the domains that were blocked"""
-        if not self.__logs:
-            # trigger log download
-            self.__download_logs()
+        # Trigger log download if necessary
+        self.__download_logs()
 
         # Iterate over each subnet's logs and populate set with blocked egresses
         egress_failures = set()
         for _, log in self.__logs.items():
-            egress_failures.update(re.findall(self.remote_log_regex, log))
+            egress_failures.update(re.findall(self.remote_log_egress_regex, log))
 
         return egress_failures
 
@@ -185,16 +204,17 @@ class ClusterVerifierRecord:
         """
         Downloads verifier logs stored in log_download_url for each subnet and populates __logs
         """
-        _, listing = htmllistparse.fetch_listing(
-            self.log_download_url, timeout=5, auth=self.remote_log_auth
-        )
-        subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
-        for subnet in subnets:
-            self.__logs[subnet] = requests.get(
-                self.log_download_url + subnet + self.remote_log_file_name,
-                timeout=5,
-                auth=self.remote_log_auth,
-            ).text
+        if not self.__logs:
+            _, listing = htmllistparse.fetch_listing(
+                self.log_download_url, timeout=5, auth=self.remote_log_auth
+            )
+            subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
+            for subnet in subnets:
+                self.__logs[subnet] = requests.get(
+                    self.log_download_url + subnet + self.remote_log_file_name,
+                    timeout=5,
+                    auth=self.remote_log_auth,
+                ).text
 
     def __add__(self, other):
         """
