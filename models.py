@@ -101,8 +101,8 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
-        # egress_failures will keep track of the unreachable egress endpoints
-        self.__egress_failures = None
+        # __logs will keep cache downloaded logs
+        self.__logs = {}
 
         # hostedcluster will keep track of this cluster's hypershift status
         self.__hostedcluster = None
@@ -155,23 +155,17 @@ class ClusterVerifierRecord:
         return None
 
     def get_egress_failures(self) -> set[str]:
-        """Parses the log files stored in log_download_url for the domains that were blocked"""
-        if self.__egress_failures is None:
-            _, listing = htmllistparse.fetch_listing(
-                self.log_download_url, timeout=5, auth=self.remote_log_auth
-            )
-            subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
-            egress_failures = set()
-            for subnet in subnets:
-                log = requests.get(
-                    self.log_download_url + subnet + self.remote_log_file_name,
-                    timeout=5,
-                    auth=self.remote_log_auth,
-                ).text
-                egress_failures.update(re.findall(self.remote_log_regex, log))
-            # Cache the result
-            self.__egress_failures = egress_failures
-        return self.__egress_failures
+        """Parses the log files for the domains that were blocked"""
+        if not self.__logs:
+            # trigger log download
+            self.__download_logs()
+
+        # Iterate over each subnet's logs and populate set with blocked egresses
+        egress_failures = set()
+        for _, log in self.__logs.items():
+            egress_failures.update(re.findall(self.remote_log_regex, log))
+
+        return egress_failures
 
     def is_hostedcluster(self) -> bool:
         """
@@ -186,6 +180,21 @@ class ClusterVerifierRecord:
             ).json()
             self.__hostedcluster = bool(desc["hypershift"]["enabled"])
         return self.__hostedcluster
+
+    def __download_logs(self):
+        """
+        Downloads verifier logs stored in log_download_url for each subnet and populates __logs
+        """
+        _, listing = htmllistparse.fetch_listing(
+            self.log_download_url, timeout=5, auth=self.remote_log_auth
+        )
+        subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
+        for subnet in subnets:
+            self.__logs[subnet] = requests.get(
+                self.log_download_url + subnet + self.remote_log_file_name,
+                timeout=5,
+                auth=self.remote_log_auth,
+            ).text
 
     def __add__(self, other):
         """
@@ -204,7 +213,8 @@ class ClusterVerifierRecord:
 
     def __gt__(self, other):
         """
-        We consider another CVR to be "greater" if it's newer or is same age and has a greater-or-equal OCMState
+        We consider another CVR to be "greater" if it's newer or is same age and has
+        a greater-or-equal OCMState
         """
         try:
             if self.cid != other.cid:
