@@ -1,9 +1,14 @@
 """Data models for verifier log analysis"""
 import json
+import re
 from datetime import datetime
-from enum import auto, Enum, IntEnum
+from enum import Enum, IntEnum, auto
 from typing import Optional
 
+import htmllistparse
+import requests
+
+import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
 
 
@@ -58,16 +63,23 @@ class InFlightState(Enum):
 
 
 class Outcome(Enum):
-    """Statistical outcomes"""
+    """Statistical and error outcomes"""
 
     TRUE_NEGATIVE = auto()
     TRUE_POSITIVE = auto()
     FALSE_NEGATIVE = auto()
     FALSE_POSITIVE = auto()
+    ERROR = auto()
 
 
 class ClusterVerifierRecord:
     """Represents a single row in the CSV"""
+
+    remote_log_egress_regex = re.compile(settings.REMOTE_LOG_EGRESS_REGEX_PATTERN)
+    remote_log_error_regex = re.compile(settings.REMOTE_LOG_ERROR_REGEX_PATTERN)
+    remote_log_file_name = settings.REMOTE_LOG_FILE_NAME
+    remote_log_auth = settings.REMOTE_LOG_AUTH
+    force_failure_endpoints = settings.FORCE_FAILURE_ENDPOINTS
 
     def __init__(
         self,
@@ -91,6 +103,12 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
+        # __logs will keep cache downloaded logs
+        self.__logs = {}
+
+        # hostedcluster will keep track of this cluster's hypershift status
+        self.__hostedcluster = None
+
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
         if self.ocm_state is not None:
@@ -104,6 +122,7 @@ class ClusterVerifierRecord:
         return [self.cname, self.ocm_state, self.ocm_inflight_states] == [None] * 3
 
     def get_outcome(self) -> Outcome:
+        """Calculate the statistical outcome of this (assumed completed) test record"""
         if (
             self.is_incomplete()
             or len(self.reached_states) == 0
@@ -129,8 +148,73 @@ class ClusterVerifierRecord:
             OCMState.READY in self.reached_states
             and InFlightState.PASSED not in self.ocm_inflight_states
         ):
+            # This *might* be a false positive; check if failed egress endpoints contain
+            # a force-failure endpoint
+            ff_endpoints = self.get_egress_failures() & self.force_failure_endpoints
+            if len(ff_endpoints) > 0:
+                return Outcome.TRUE_POSITIVE
+
+            # Now check if logs contain an error
+            if len(self.get_errors()) > 0:
+                return Outcome.ERROR
+
+            # Finished check edge cases, so it must be a genuine false positive
             return Outcome.FALSE_POSITIVE
         return None
+
+    def get_errors(self) -> set[str]:
+        """Parse downloaded logs for error messages"""
+        # Trigger log download if necessary
+        self.__download_logs()
+
+        # Iterate over each subnet's logs and populate set with blocked egresses
+        errors = set()
+        for _, log in self.__logs.items():
+            errors.update(re.findall(self.remote_log_error_regex, log))
+
+        return errors
+
+    def get_egress_failures(self) -> set[str]:
+        """Parses the log files for the domains that were blocked"""
+        # Trigger log download if necessary
+        self.__download_logs()
+
+        # Iterate over each subnet's logs and populate set with blocked egresses
+        egress_failures = set()
+        for _, log in self.__logs.items():
+            egress_failures.update(re.findall(self.remote_log_egress_regex, log))
+
+        return egress_failures
+
+    def is_hostedcluster(self) -> bool:
+        """
+        Parses the OCM description file stored in log_download_url and returns True if
+        this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled")
+        """
+        if self.__hostedcluster is None:
+            desc = requests.get(
+                self.log_download_url + "desc.json",
+                timeout=5,
+                auth=self.remote_log_auth,
+            ).json()
+            self.__hostedcluster = bool(desc["hypershift"]["enabled"])
+        return self.__hostedcluster
+
+    def __download_logs(self):
+        """
+        Downloads verifier logs stored in log_download_url for each subnet and populates __logs
+        """
+        if not self.__logs:
+            _, listing = htmllistparse.fetch_listing(
+                self.log_download_url, timeout=5, auth=self.remote_log_auth
+            )
+            subnets = (lnk.name for lnk in listing if "subnet" in lnk.name)
+            for subnet in subnets:
+                self.__logs[subnet] = requests.get(
+                    self.log_download_url + subnet + self.remote_log_file_name,
+                    timeout=5,
+                    auth=self.remote_log_auth,
+                ).text
 
     def __add__(self, other):
         """
@@ -149,7 +233,8 @@ class ClusterVerifierRecord:
 
     def __gt__(self, other):
         """
-        We consider another CVR to be "greater" if it's newer or is same age and has a greater-or-equal OCMState
+        We consider another CVR to be "greater" if it's newer or is same age and has
+        a greater-or-equal OCMState
         """
         try:
             if self.cid != other.cid:
