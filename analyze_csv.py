@@ -1,8 +1,40 @@
 """Analyze a CSV produced by the verifier_log_cronjob.sh and print the results"""
+import argparse
 import csv
 import sys
 
 from models import ClusterVerifierRecord, Outcome
+
+arg_parser = argparse.ArgumentParser(
+    description="Analyze CSVs produced by verifier_log_cronjob.sh and print the results"
+)
+arg_parser.add_argument(
+    "csv_file",
+    type=argparse.FileType(encoding="utf-8"),
+    nargs=1,
+    help="path to the CSV file under analysis",
+)
+arg_parser.add_argument(
+    "--hcp",
+    action=argparse.BooleanOptionalAction,
+    help=(
+        "analyze ONLY data generated from HyperShift/HCP HostedClusters. "
+        "Conversely, --no-hcp excludes all HostedCluster data. Set "
+        "neither of these to analyze all data"
+    ),
+)
+arg_parser.add_argument(
+    "--since",
+    metavar="ISO8601_DATETIME",
+    type=str,
+    help="ignore data collected before ISO8601_DATETIME",
+)
+arg_parser.add_argument(
+    "--until",
+    metavar="ISO8601_DATETIME",
+    type=str,
+    help="ignore data collected after ISO8601_DATETIME",
+)
 
 cvrs = {}
 with open(sys.argv[1], newline="", encoding="utf-8") as f:
