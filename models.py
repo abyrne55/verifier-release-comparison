@@ -186,18 +186,35 @@ class ClusterVerifierRecord:
 
         return egress_failures
 
-    def is_hostedcluster(self) -> bool:
+    def is_hostedcluster(self, cache: dict[str, bool] = None) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
-        this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled")
+        this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled").
+        May return None if OCM description file is unreadable/missing. Optionally,
+        pass a Manager.dict() object to enable cluster-ID-based caching.
         """
+        if cache is None:
+            cache = {}
         if self.__hostedcluster is None:
-            desc = requests.get(
-                self.log_download_url + "desc.json",
-                timeout=5,
-                auth=self.remote_log_auth,
-            ).json()
-            self.__hostedcluster = bool(desc["hypershift"]["enabled"])
+            try:
+                # Try fetching HCP status from cache
+                self.__hostedcluster = cache[self.cid]
+            except KeyError:
+                # HCP status not cached for this cluster ID
+                desc_req = requests.get(
+                    self.log_download_url + "desc.json",
+                    timeout=5,
+                    auth=self.remote_log_auth,
+                )
+                try:
+                    self.__hostedcluster = bool(
+                        desc_req.json()["hypershift"]["enabled"]
+                    )
+                    # Update cache
+                    cache[self.cid] = self.__hostedcluster
+                except requests.exceptions.JSONDecodeError:
+                    # Blank/malformed cluster description JSON. Allow default to None
+                    pass
         return self.__hostedcluster
 
     def __download_logs(self):
