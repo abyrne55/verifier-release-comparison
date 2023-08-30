@@ -55,7 +55,7 @@ with Manager() as manager:
         cvr = ClusterVerifierRecord.from_dict(row)
 
         # Filter out HCPs according to date bounding and presence of --(no-)hcp flag
-        if (cvr.timestamp > since_dt and cvr.timestamp < until_dt) and (
+        if (cvr.timestamp >= since_dt and cvr.timestamp <= until_dt) and (
             args.hcp is None or args.hcp == cvr.is_hostedcluster(cache=hcp_cache)
         ):
             try:
