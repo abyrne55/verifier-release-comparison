@@ -1,6 +1,7 @@
 """Analyze a CSV produced by the verifier_log_cronjob.sh and print the results"""
 import argparse
 import csv
+from datetime import datetime, timezone
 from multiprocessing import Manager
 
 from models import ClusterVerifierRecord, Outcome
@@ -9,6 +10,7 @@ from models import ClusterVerifierRecord, Outcome
 arg_parser = argparse.ArgumentParser(
     description="Analyze CSVs produced by verifier_log_cronjob.sh and print the results"
 )
+# argparse will call open() on csv_file automatically (no need to use "with open(...) as f")
 arg_parser.add_argument(
     "csv_file",
     type=argparse.FileType(),
@@ -28,27 +30,34 @@ arg_parser.add_argument(
     "--since",
     metavar="ISO8601_DATETIME",
     type=str,
-    help="ignore data collected before ISO8601_DATETIME",
+    help="ignore data collected before ISO8601_DATETIME (assumed UTC)",
+    default=datetime.isoformat(datetime.min),
 )
 arg_parser.add_argument(
     "--until",
     metavar="ISO8601_DATETIME",
     type=str,
-    help="ignore data collected after ISO8601_DATETIME",
+    help="ignore data collected after ISO8601_DATETIME (assumed UTC)",
+    default=datetime.isoformat(datetime.max),
 )
 args = arg_parser.parse_args()
+since_dt = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
+until_dt = datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc)
 
 # Read CSV and create a ClusterVerifierRecord (CVR) from each row
 cvrs = {}
 with Manager() as manager:
     # Use a "dict manager" for our HCP cache (futureproofing against multiprocessing)
     hcp_cache = manager.dict()
-    # with open(args.csv_file, newline="", encoding="utf-8") as f:
+
     reader = csv.DictReader(args.csv_file)
     for row in reader:
         cvr = ClusterVerifierRecord.from_dict(row)
-        # Filter out HCPs according to presence of --(no-)hcp flag
-        if args.hcp is None or args.hcp == cvr.is_hostedcluster(cache=hcp_cache):
+
+        # Filter out HCPs according to date bounding and presence of --(no-)hcp flag
+        if (cvr.timestamp >= since_dt and cvr.timestamp <= until_dt) and (
+            args.hcp is None or args.hcp == cvr.is_hostedcluster(cache=hcp_cache)
+        ):
             try:
                 cvrs[cvr.cid] += cvr
             except KeyError:
@@ -59,12 +68,15 @@ args.csv_file.close()
 
 print(f"Total deduplicated records: {len(cvrs)}")
 
-outcomes = {}
+# Create a dict of empty lists where every enumerated value of Outcome becomes a key
+outcomes = {o: [] for o in Outcome}
 
+# Sort each CVR into the dictionary created above based on outcome
 for _, cvr in cvrs.items():
     try:
         outcomes[cvr.get_outcome()].append(cvr)
     except KeyError:
+        # We might hit this for NoneType outcomes
         outcomes[cvr.get_outcome()] = [cvr]
 
 # pylint: disable=consider-using-dict-items
