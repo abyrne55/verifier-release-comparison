@@ -1,6 +1,7 @@
 """Analyze a CSV produced by the verifier_log_cronjob.sh and print the results"""
 import argparse
 import csv
+import sys
 from datetime import datetime, timezone
 from multiprocessing import Manager
 
@@ -52,7 +53,11 @@ with Manager() as manager:
 
     reader = csv.DictReader(args.csv_file)
     for row in reader:
-        cvr = ClusterVerifierRecord.from_dict(row)
+        try:
+            cvr = ClusterVerifierRecord.from_dict(row)
+        except KeyError as exc:
+            print(f"WARN: failed to process {row}: {exc}", file=sys.stderr)
+            continue
 
         # Filter out HCPs according to date bounding and presence of --(no-)hcp flag
         if (cvr.timestamp >= since_dt and cvr.timestamp <= until_dt) and (
@@ -65,8 +70,7 @@ with Manager() as manager:
                 cvrs[cvr.cid] = cvr
 args.csv_file.close()
 
-
-print(f"Total deduplicated records: {len(cvrs)}")
+print(f"Total Clusters,{len(cvrs)},")
 
 # Create a dict of empty lists where every enumerated value of Outcome becomes a key
 outcomes = {o: [] for o in Outcome}
@@ -80,8 +84,8 @@ for _, cvr in cvrs.items():
         outcomes[cvr.get_outcome()] = [cvr]
 
 # pylint: disable=consider-using-dict-items
-for oc in outcomes:
-    print(f"{oc}: {len(outcomes[oc])}")
+# for oc in outcomes:
+#     print(f"{oc}: {len(outcomes[oc])}")
 
 # Statistical Measures
 # See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
@@ -89,36 +93,42 @@ tp = len(outcomes[Outcome.TRUE_POSITIVE])
 tn = len(outcomes[Outcome.TRUE_NEGATIVE])
 fn = len(outcomes[Outcome.FALSE_NEGATIVE])
 fp = len(outcomes[Outcome.FALSE_POSITIVE])
+errors = len(outcomes[Outcome.ERROR])
 
 print(
-    f"True Negatives,{tn}\nFalse Negatives,{fn}\nTrue Positives,{tp}\nFalse Positives,{fp}"
+    f"True Negatives,{tn},\nFalse Negatives,{fn},\nTrue Positives,{tp},\n"
+    f"False Positives,{fp},\nErrors,{errors},"
 )
 
-fdr = fp / (fp + tp)
+# fdr = fp / (fp + tp)
 fpr = fp / (fp + tn)
-f1 = (2 * tp) / (2 * tp + fp + fn)
-acc = (tp + tn) / (tp + tn + fp + fn)
+# f1 = (2 * tp) / (2 * tp + fp + fn)
+# acc = (tp + tn) / (tp + tn + fp + fn)
 precision = tp / (tp + fp)
-recall = tp / (tp + fn)
-specificity = tn / (tn + fp)
+# recall = tp / (tp + fn)
+# specificity = tn / (tn + fp)
+frustration_risk = fp / (tp + tn + fp + fn)
 
 print(
-    f"FDR: {fdr:.1%} | FPR: {fpr:.1%} | Precision: {precision:.1%} | "
-    f"Recall (sensitivity): {recall:.1%}"
+    f"FPR,{fpr:.2%},\nPrecision,{precision:.2%},\n"
+    f"Cx. Frustration Risk,{frustration_risk:.2%},"
 )
-print(f"F1: {f1:.1%} | ACC: {acc:.1%} | Specificity: {specificity:.1%}")
 
-print("False Positives")
+
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
-    print(
-        f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)}"
-        f"{repr(cvr.get_egress_failures())}"
-    )
+    # print(
+    #     f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)}"
+    #     f"{repr(cvr.get_egress_failures())}"
+    # )
     for ep in cvr.get_egress_failures():
         try:
             fp_endpoints[ep] += 1
         except KeyError:
             fp_endpoints[ep] = 1
 
-print(repr(fp_endpoints))
+fp_endpoints_str = " ".join(
+    f"{k}={v}"
+    for k, v in sorted(fp_endpoints.items(), key=lambda x: x[1], reverse=True)
+)
+print(f"FP Domains,{fp_endpoints_str},")
