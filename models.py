@@ -111,7 +111,10 @@ class ClusterVerifierRecord:
         self.__logs = {}
 
         # hostedcluster will keep track of this cluster's hypershift status
-        self.__hostedcluster = None
+        self._hostedcluster = None
+
+        # organization_id will keep track of this cluster owners's OCM org ID
+        self._organization_id = None
 
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
@@ -238,7 +241,13 @@ class ClusterVerifierRecord:
             lesser_cvr.timestamp = greater_cvr.timestamp
             return lesser_cvr
 
+        # Transfer some attributes from least to greatest
         greater_cvr.reached_states.update(lesser_cvr.reached_states)
+        if greater_cvr._hostedcluster is None:
+            greater_cvr._hostedcluster = lesser_cvr._hostedcluster
+        if greater_cvr._organization_id is None:
+            greater_cvr._organization_id = lesser_cvr._organization_id
+
         return greater_cvr
 
     def __gt__(self, other):
