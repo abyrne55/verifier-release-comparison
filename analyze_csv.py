@@ -83,9 +83,6 @@ for _, cvr in cvrs.items():
         # We might hit this for NoneType outcomes
         outcomes[cvr.get_outcome()] = [cvr]
 
-# pylint: disable=consider-using-dict-items
-# for oc in outcomes:
-#     print(f"{oc}: {len(outcomes[oc])}")
 
 # Statistical Measures
 # See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
@@ -114,13 +111,8 @@ print(
     f"Cx. Frustration Risk,{frustration_risk:.2%},"
 )
 
-
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
-    # print(
-    #     f"{cvr.log_download_url} {cvr.is_hostedcluster()}: {repr(cvr)}"
-    #     f"{repr(cvr.get_egress_failures())}"
-    # )
     for ep in cvr.get_egress_failures():
         try:
             fp_endpoints[ep] += 1
