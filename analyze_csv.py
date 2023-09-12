@@ -47,27 +47,23 @@ until_dt = datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc)
 
 # Read CSV and create a ClusterVerifierRecord (CVR) from each row
 cvrs = {}
-with Manager() as manager:
-    # Use a "dict manager" for our HCP cache (futureproofing against multiprocessing)
-    hcp_cache = manager.dict()
+reader = csv.DictReader(args.csv_file)
+for row in reader:
+    try:
+        cvr = ClusterVerifierRecord.from_dict(row)
+    except KeyError as exc:
+        print(f"WARN: failed to process {row}: {exc}", file=sys.stderr)
+        continue
 
-    reader = csv.DictReader(args.csv_file)
-    for row in reader:
+    # Filter out HCPs according to date bounding and presence of --(no-)hcp flag
+    if (cvr.timestamp >= since_dt and cvr.timestamp <= until_dt) and (
+        args.hcp is None or args.hcp == cvr.is_hostedcluster()
+    ):
         try:
-            cvr = ClusterVerifierRecord.from_dict(row)
-        except KeyError as exc:
-            print(f"WARN: failed to process {row}: {exc}", file=sys.stderr)
-            continue
-
-        # Filter out HCPs according to date bounding and presence of --(no-)hcp flag
-        if (cvr.timestamp >= since_dt and cvr.timestamp <= until_dt) and (
-            args.hcp is None or args.hcp == cvr.is_hostedcluster(cache=hcp_cache)
-        ):
-            try:
-                cvrs[cvr.cid] += cvr
-            except KeyError:
-                # First time we're seeing a CVR for this cluster ID; store it
-                cvrs[cvr.cid] = cvr
+            cvrs[cvr.cid] += cvr
+        except KeyError:
+            # First time we're seeing a CVR for this cluster ID; store it
+            cvrs[cvr.cid] = cvr
 args.csv_file.close()
 
 print(f"Total Clusters,{len(cvrs)},")

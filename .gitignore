@@ -162,6 +162,7 @@ cython_debug/
 *.csv
 *.json
 *.sh
+*.sqlite
 results/
 oldtests/
 .netrc
