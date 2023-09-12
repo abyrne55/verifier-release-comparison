@@ -7,9 +7,13 @@ from typing import Optional
 
 import htmllistparse
 import requests
+from requests_cache import install_cache, NEVER_EXPIRE
 
 import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
+
+# Enable HTTP caching globally
+install_cache(".vla-http-cache", backend=("sqlite"), expire_after=NEVER_EXPIRE)
 
 
 class OCMState(IntEnum):
