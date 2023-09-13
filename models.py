@@ -13,7 +13,12 @@ import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
 
 # Enable HTTP caching globally
-install_cache(".vla-http-cache", backend="sqlite", expire_after=NEVER_EXPIRE)
+install_cache(
+    ".vla-http-cache",
+    backend="sqlite",
+    expire_after=NEVER_EXPIRE,
+    allowable_methods=["GET"],
+)
 
 
 class OCMState(IntEnum):
@@ -193,13 +198,46 @@ class ClusterVerifierRecord:
 
         return egress_failures
 
+    def get_organization_id(self, ocm_client) -> str:
+        """
+        Parses the OCM description file stored in log_download_url and returns the
+        organization_id associated with the cluster's subscription. May return None if
+        OCM description file or subscription is unreadable/missing.
+
+        :param ocm_client: a util.OCMClient instance
+        """
+        if self._organization_id is None:
+            # First fetch the cluster description from the remote log server...
+            desc_req = requests.get(
+                self.log_download_url + "desc.json",
+                timeout=5,
+                auth=self.remote_log_auth,
+            )
+            # ...and extract a link to the cluster's subscription
+            try:
+                subscription_href = desc_req.json()["subscription"]["href"]
+            except requests.exceptions.JSONDecodeError:
+                # Blank/malformed cluster description JSON. Allow default to None
+                return None
+
+            # Then fetch the the subscription from OCM...
+            subscription_req = ocm_client.get(subscription_href)
+            # ...and extract the org ID
+            try:
+                self._organization_id = subscription_req.json()["organization_id"]
+            except requests.exceptions.JSONDecodeError:
+                # Malformed OCM response JSON. Allow default to None
+                return None
+
+        return self._organization_id
+
     def is_hostedcluster(self) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
         this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled").
         May return None if OCM description file is unreadable/missing.
         """
-        if self.__hostedcluster is None:
+        if self._hostedcluster is None:
             # HCP status not cached for this cluster ID
             desc_req = requests.get(
                 self.log_download_url + "desc.json",
@@ -207,11 +245,11 @@ class ClusterVerifierRecord:
                 auth=self.remote_log_auth,
             )
             try:
-                self.__hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
+                self._hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
             except requests.exceptions.JSONDecodeError:
                 # Blank/malformed cluster description JSON. Allow default to None
                 pass
-        return self.__hostedcluster
+        return self._hostedcluster
 
     def __download_logs(self):
         """
