@@ -5,6 +5,8 @@ import sys
 from datetime import datetime, timezone
 from requests_cache import install_cache, NEVER_EXPIRE
 
+# pylint: disable=C0103
+
 # Enable HTTP caching globally before importing network-using modules
 install_cache(
     ".vla-http-cache",
@@ -94,6 +96,7 @@ if args.internal_cx is not None:
     filtered_cvrs = []
     org_id_cache = {}  # Maps org IDs to bools (True == int. cx.)
     ocm_client = OCMClient()
+    cvrs_thrown_away = 0
     # Iterate over a list-copy of the cvrs dict (so that we can delete stuff)
     for cid, cvr in list(cvrs.items()):
         try:
@@ -109,10 +112,13 @@ if args.internal_cx is not None:
             if not cvr_is_int_cx == args.internal_cx:
                 del cvrs[cid]
         except ValueError as exc:
-            print(
-                f"WARN: unable to determine if {cid} is internal; throwing away. Details: {exc}"
-            )
+            cvrs_thrown_away += 1
             del cvrs[cid]
+    if cvrs_thrown_away > 0:
+        print(
+            f"WARN: discarded data from {cvrs_thrown_away} clusters due to inability "
+            "to determine owner"
+        )
 
 
 print(f"Total Clusters,{len(cvrs)},")
