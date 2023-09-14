@@ -7,13 +7,9 @@ from typing import Optional
 
 import htmllistparse
 import requests
-from requests_cache import install_cache, NEVER_EXPIRE
 
 import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
-
-# Enable HTTP caching globally
-install_cache(".vla-http-cache", backend="sqlite", expire_after=NEVER_EXPIRE)
 
 
 class OCMState(IntEnum):
@@ -111,7 +107,10 @@ class ClusterVerifierRecord:
         self.__logs = {}
 
         # hostedcluster will keep track of this cluster's hypershift status
-        self.__hostedcluster = None
+        self._hostedcluster = None
+
+        # organization_id will keep track of this cluster owners's OCM org ID
+        self._organization_id = None
 
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
@@ -190,13 +189,43 @@ class ClusterVerifierRecord:
 
         return egress_failures
 
+    def get_organization_id(self, ocm_client) -> str:
+        """
+        Parses the OCM description file stored in log_download_url and returns the
+        organization_id associated with the cluster's subscription. May return None if
+        OCM description file or subscription is unreadable/missing.
+
+        :param ocm_client: a util.OCMClient instance
+        """
+        if self._organization_id is None:
+            # First fetch the cluster description from the remote log server...
+            desc_req = requests.get(
+                self.log_download_url + "desc.json",
+                timeout=5,
+                auth=self.remote_log_auth,
+            )
+            # ...and extract a link to the cluster's subscription
+            try:
+                subscription_href = desc_req.json()["subscription"]["href"]
+
+                # Then fetch the the subscription from OCM...
+                subscription_req = ocm_client.get(subscription_href)
+                # ...and extract the org ID
+
+                self._organization_id = subscription_req.json()["organization_id"]
+            except (requests.exceptions.JSONDecodeError, KeyError) as exc:
+                # Malformed OCM response JSON or recv'd a 404
+                raise ValueError("Unable to determine organization_id") from exc
+
+        return self._organization_id
+
     def is_hostedcluster(self) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
         this cluster is an HCP/HyperShift HostedCluster (i.e. "hypershift.enabled").
         May return None if OCM description file is unreadable/missing.
         """
-        if self.__hostedcluster is None:
+        if self._hostedcluster is None:
             # HCP status not cached for this cluster ID
             desc_req = requests.get(
                 self.log_download_url + "desc.json",
@@ -204,11 +233,11 @@ class ClusterVerifierRecord:
                 auth=self.remote_log_auth,
             )
             try:
-                self.__hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
+                self._hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
             except requests.exceptions.JSONDecodeError:
                 # Blank/malformed cluster description JSON. Allow default to None
                 pass
-        return self.__hostedcluster
+        return self._hostedcluster
 
     def __download_logs(self):
         """
@@ -238,7 +267,13 @@ class ClusterVerifierRecord:
             lesser_cvr.timestamp = greater_cvr.timestamp
             return lesser_cvr
 
+        # Transfer some attributes from least to greatest
         greater_cvr.reached_states.update(lesser_cvr.reached_states)
+        if greater_cvr._hostedcluster is None:
+            greater_cvr._hostedcluster = lesser_cvr._hostedcluster
+        if greater_cvr._organization_id is None:
+            greater_cvr._organization_id = lesser_cvr._organization_id
+
         return greater_cvr
 
     def __gt__(self, other):
