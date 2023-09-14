@@ -5,8 +5,6 @@ import sys
 from datetime import datetime, timezone
 from requests_cache import install_cache, NEVER_EXPIRE
 
-# pylint: disable=C0103
-
 # Enable HTTP caching globally before importing network-using modules
 install_cache(
     ".vla-http-cache",
@@ -14,7 +12,7 @@ install_cache(
     expire_after=NEVER_EXPIRE,
     allowable_methods=["GET"],
 )
-# pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position, C0103
 from models import ClusterVerifierRecord, Outcome
 from util import OCMClient, is_internal_customer
 
