@@ -165,4 +165,4 @@ cython_debug/
 *.sqlite
 results/
 oldtests/
-.netrc
+settings.py
