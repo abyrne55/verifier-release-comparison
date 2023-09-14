@@ -3,9 +3,18 @@ import argparse
 import csv
 import sys
 from datetime import datetime, timezone
-from multiprocessing import Manager
+from requests_cache import install_cache, NEVER_EXPIRE
 
+# Enable HTTP caching globally before importing network-using modules
+install_cache(
+    ".vla-http-cache",
+    backend="sqlite",
+    expire_after=NEVER_EXPIRE,
+    allowable_methods=["GET"],
+)
+# pylint: disable=wrong-import-position
 from models import ClusterVerifierRecord, Outcome
+from util import OCMClient, is_internal_customer
 
 # Parse command line arguments
 arg_parser = argparse.ArgumentParser(
@@ -25,6 +34,18 @@ arg_parser.add_argument(
         "--no-hcp excludes all HostedCluster data. Set neither of these to analyze "
         "all data. NOTE: setting either flag will cause an extra HTTP request per"
         "cluster ID, likely slowing processing considerably"
+    ),
+)
+arg_parser.add_argument(
+    "--internal-cx",
+    action=argparse.BooleanOptionalAction,
+    help=(
+        "analyze ONLY data generated from internal customers' clusters. Conversely, "
+        "--no-internal-cx only analyzes data from external customers' clusters. Set "
+        "neither of these to analyze all data. NOTE: setting either flag will cause "
+        "2-3 extra HTTP requests per cluster ID, heavily slowing processing. Also, "
+        "the OCM_CONFIG environmental variable must point to a valid OCM credentials"
+        "file"
     ),
 )
 arg_parser.add_argument(
@@ -65,6 +86,34 @@ for row in reader:
             # First time we're seeing a CVR for this cluster ID; store it
             cvrs[cvr.cid] = cvr
 args.csv_file.close()
+
+# Now for the expensive filtering: checking for internal vs. external customers
+# If we have to do this, we use a somewhat-clunky caching approach to avoid making
+# extraneous requests to OCM
+if args.internal_cx is not None:
+    filtered_cvrs = []
+    org_id_cache = {}  # Maps org IDs to bools (True == int. cx.)
+    ocm_client = OCMClient()
+    # Iterate over a list-copy of the cvrs dict (so that we can delete stuff)
+    for cid, cvr in list(cvrs.items()):
+        try:
+            org_id = cvr.get_organization_id(ocm_client)
+            try:
+                cvr_is_int_cx = org_id_cache[org_id]
+            except KeyError:
+                # First time we're seeing this org_id; cache internal cx status
+                cvr_is_int_cx = is_internal_customer(ocm_client, org_id)
+                org_id_cache[org_id] = cvr_is_int_cx
+
+            # Delete CVRs whose internal status doesn't match args.internal_cx
+            if not cvr_is_int_cx == args.internal_cx:
+                del cvrs[cid]
+        except ValueError as exc:
+            print(
+                f"WARN: unable to determine if {cid} is internal; throwing away. Details: {exc}"
+            )
+            del cvrs[cid]
+
 
 print(f"Total Clusters,{len(cvrs)},")
 

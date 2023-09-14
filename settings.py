@@ -21,6 +21,10 @@ REMOTE_LOG_ERROR_REGEX_PATTERN = (
     r"|error performing [\w\d]*:[\w\d]*).*[\n$]"
 )
 
+# Regular expression to use for identifying internal customers (no capturing groups)
+# Will be evaluated with the IGNORECASE flag
+INTERNAL_CUSTOMER_REGEX_PATTERN = r"foo|bar"
+
 # Set of egress endpoints that, if seen, should convert a false positive into a true
 # positive. For example, we can assume that a cluster that blocks its Splunk forwarding
 # URL will be considered "failed" even if OCM reports it as "ready"

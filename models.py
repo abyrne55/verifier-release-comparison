@@ -7,18 +7,9 @@ from typing import Optional
 
 import htmllistparse
 import requests
-from requests_cache import install_cache, NEVER_EXPIRE
 
 import settings
 from util import csv_bool_to_bool, is_nully_str, is_valid_url
-
-# Enable HTTP caching globally
-install_cache(
-    ".vla-http-cache",
-    backend="sqlite",
-    expire_after=NEVER_EXPIRE,
-    allowable_methods=["GET"],
-)
 
 
 class OCMState(IntEnum):
@@ -216,18 +207,15 @@ class ClusterVerifierRecord:
             # ...and extract a link to the cluster's subscription
             try:
                 subscription_href = desc_req.json()["subscription"]["href"]
-            except requests.exceptions.JSONDecodeError:
-                # Blank/malformed cluster description JSON. Allow default to None
-                return None
 
-            # Then fetch the the subscription from OCM...
-            subscription_req = ocm_client.get(subscription_href)
-            # ...and extract the org ID
-            try:
+                # Then fetch the the subscription from OCM...
+                subscription_req = ocm_client.get(subscription_href)
+                # ...and extract the org ID
+
                 self._organization_id = subscription_req.json()["organization_id"]
-            except requests.exceptions.JSONDecodeError:
-                # Malformed OCM response JSON. Allow default to None
-                return None
+            except (requests.exceptions.JSONDecodeError, KeyError) as exc:
+                # Malformed OCM response JSON or recv'd a 404
+                raise ValueError("Unable to determine organization_id") from exc
 
         return self._organization_id
 
