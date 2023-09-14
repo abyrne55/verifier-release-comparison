@@ -113,6 +113,13 @@ class ClusterVerifierRecord:
         # organization_id will keep track of this cluster owners's OCM org ID
         self._organization_id = None
 
+        # aws_account_id will keep track of this cluster's AWS account ID
+        self._aws_account_id = None
+
+        # subnet_id_set will keep track of the subnets associated with this cluster
+        # according to OCM. May include subnets not tested by the verifier
+        self._subnet_id_set = None
+
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
         if self.ocm_state is not None:
@@ -216,6 +223,31 @@ class ClusterVerifierRecord:
 
         return self._organization_id
 
+    def get_subnet_id_set(self) -> frozenset:
+        """
+        Parses the OCM description file stored in log_download_url and returns the set
+        of subnet IDs into which this cluster was installed
+        May return None if OCM description file is unreadable/missing.
+        """
+        if self._subnet_id_set is None:
+            try:
+                self.__download_desc()
+                self._subnet_id_set = frozenset(self._desc["aws"]["subnet_ids"])
+            except (requests.exceptions.JSONDecodeError, KeyError):
+                # Malformed OCM response JSON or recv'd a 404. Allow default to None
+                pass
+        return self._subnet_id_set
+
+    def get_aws_account_id(self) -> str:
+        """
+        Parses the OCM description file stored in log_download_url and returns the AWS
+        account ID into which this cluster was installed
+        May return None if OCM description file is unreadable/missing.
+        """
+        # TODO
+        if self._aws_account_id is None:
+            raise NotImplementedError()
+
     def is_hostedcluster(self) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
@@ -244,8 +276,6 @@ class ClusterVerifierRecord:
                 timeout=5,
                 auth=self.remote_log_auth,
             )
-            if not desc_req.from_cache:
-                print("Cache miss for " + self.log_download_url + "desc.json")
             self._desc = desc_req.json()
 
     def __download_logs(self):
@@ -284,6 +314,10 @@ class ClusterVerifierRecord:
             greater_cvr._organization_id = lesser_cvr._organization_id
         if greater_cvr._desc is None:
             greater_cvr._desc = lesser_cvr._desc
+        if greater_cvr._aws_account_id is None:
+            greater_cvr._aws_account_id = lesser_cvr._aws_account_id
+        if greater_cvr._subnet_id_set is None:
+            greater_cvr._subnet_id_set = lesser_cvr._subnet_id_set
 
         return greater_cvr
 

@@ -62,6 +62,20 @@ arg_parser.add_argument(
     help="ignore data collected after ISO8601_DATETIME (assumed UTC)",
     default=datetime.isoformat(datetime.max),
 )
+arg_parser.add_argument(
+    "--count",
+    type=str,
+    choices=["cluster_id", "aws_account_id", "subnet_id_set"],
+    help=(
+        "set the basic counting unit. By default, we count 2+ verifier records tagged "
+        "with the same cluster ID as a single 'sample' after deduplication. Setting "
+        "this to anything other than cluster_id will trigger a second round of "
+        "deduplication where, for example, 2+ verifier records associated with the "
+        "same AWS account ID AND OUTCOME (e.g., false positive) will be counted as "
+        "one 'sample'"
+    ),
+    default="cluster_id",
+)
 args = arg_parser.parse_args()
 since_dt = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
 until_dt = datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc)
@@ -118,9 +132,6 @@ if args.internal_cx is not None:
             "to determine owner"
         )
 
-
-print(f"Total Clusters,{len(cvrs)},")
-
 # Create a dict of empty lists where every enumerated value of Outcome becomes a key
 outcomes = {o: [] for o in Outcome}
 
@@ -132,15 +143,33 @@ for _, cvr in cvrs.items():
         # We might hit this for NoneType outcomes
         outcomes[cvr.get_outcome()] = [cvr]
 
+# Deduplicate again based on the value of --count
+if args.count == "cluster_id":
+    # No further deduplication needed
+    outcomes_view = outcomes
+    unit_friendly_name = "Clusters"
+if args.count == "subnet_id_set":
+    # outcomes_view becomes a dict of sets of frozensets of subnet IDs (keys unchanged)
+    outcomes_view = {
+        o: {cvr.get_subnet_id_set() for cvr in cvr_list}
+        for o, cvr_list in outcomes.items()
+    }
+    unit_friendly_name = "Subnet ID Sets"
+if args.count == "aws_account_id":
+    # TODO outcomes_view becomes a dict of sets AWS account IDs (keys unchanged)
+    unit_friendly_name = "AWS Account IDs"
+    raise NotImplementedError()
+
 
 # Statistical Measures
 # See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
-tp = len(outcomes[Outcome.TRUE_POSITIVE])
-tn = len(outcomes[Outcome.TRUE_NEGATIVE])
-fn = len(outcomes[Outcome.FALSE_NEGATIVE])
-fp = len(outcomes[Outcome.FALSE_POSITIVE])
-errors = len(outcomes[Outcome.ERROR])
+tp = len(outcomes_view[Outcome.TRUE_POSITIVE])
+tn = len(outcomes_view[Outcome.TRUE_NEGATIVE])
+fn = len(outcomes_view[Outcome.FALSE_NEGATIVE])
+fp = len(outcomes_view[Outcome.FALSE_POSITIVE])
+errors = len(outcomes_view[Outcome.ERROR])
 
+print(f"Total {unit_friendly_name},{tp + tn + fn + fp + errors},")
 print(
     f"True Negatives,{tn},\nFalse Negatives,{fn},\nTrue Positives,{tp},\n"
     f"False Positives,{fp},\nErrors,{errors},"
