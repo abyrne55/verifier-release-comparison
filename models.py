@@ -103,8 +103,9 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
-        # __logs will keep cache downloaded logs
+        # __logs and _desc will cache downloaded logs/OCM descriptions
         self.__logs = {}
+        self._desc = None
 
         # hostedcluster will keep track of this cluster's hypershift status
         self._hostedcluster = None
@@ -199,14 +200,10 @@ class ClusterVerifierRecord:
         """
         if self._organization_id is None:
             # First fetch the cluster description from the remote log server...
-            desc_req = requests.get(
-                self.log_download_url + "desc.json",
-                timeout=5,
-                auth=self.remote_log_auth,
-            )
+            self.__download_desc()
             # ...and extract a link to the cluster's subscription
             try:
-                subscription_href = desc_req.json()["subscription"]["href"]
+                subscription_href = self._desc["subscription"]["href"]
 
                 # Then fetch the the subscription from OCM...
                 subscription_req = ocm_client.get(subscription_href)
@@ -227,17 +224,29 @@ class ClusterVerifierRecord:
         """
         if self._hostedcluster is None:
             # HCP status not cached for this cluster ID
+            try:
+                self.__download_desc()
+                self._hostedcluster = bool(self._desc["hypershift"]["enabled"])
+            except (requests.exceptions.JSONDecodeError, KeyError):
+                # Blank/malformed cluster description JSON. Allow default to None
+                pass
+        return self._hostedcluster
+
+    def __download_desc(self):
+        """
+        Downloads the OCM description file stored in log_download_url and populates
+        __desc with arrays extracted from the JSON. Will throw
+        requests.exceptions.JSONDecodeError if description file is missing or malformed
+        """
+        if not self._desc:
             desc_req = requests.get(
                 self.log_download_url + "desc.json",
                 timeout=5,
                 auth=self.remote_log_auth,
             )
-            try:
-                self._hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
-            except requests.exceptions.JSONDecodeError:
-                # Blank/malformed cluster description JSON. Allow default to None
-                pass
-        return self._hostedcluster
+            if not desc_req.from_cache:
+                print("Cache miss for " + self.log_download_url + "desc.json")
+            self._desc = desc_req.json()
 
     def __download_logs(self):
         """
@@ -273,6 +282,8 @@ class ClusterVerifierRecord:
             greater_cvr._hostedcluster = lesser_cvr._hostedcluster
         if greater_cvr._organization_id is None:
             greater_cvr._organization_id = lesser_cvr._organization_id
+        if greater_cvr._desc is None:
+            greater_cvr._desc = lesser_cvr._desc
 
         return greater_cvr
 
