@@ -155,6 +155,10 @@ if args.count == "subnet_id_set":
         for o, cvr_list in outcomes.items()
     }
     unit_friendly_name = "Subnet ID Sets"
+    print(
+        "INFO: performance metrics (e.g., FPR, precision) will NOT be calculated, "
+        "as they're invalid/meaningless when deduplicating by network (--count=subnet_id_sets)"
+    )
 
 
 # Statistical Measures
@@ -171,19 +175,22 @@ print(
     f"False Positives,{fp},\nErrors,{errors},"
 )
 
-# fdr = fp / (fp + tp)
-fpr = fp / (fp + tn)
-# f1 = (2 * tp) / (2 * tp + fp + fn)
-# acc = (tp + tn) / (tp + tn + fp + fn)
-precision = tp / (tp + fp)
-# recall = tp / (tp + fn)
-# specificity = tn / (tn + fp)
-frustration_risk = fp / (tp + tn + fp + fn)
+# Calculate metrics only if counting cluster IDs (other units produce
+# meaningless/statistically-invalid numbers due to deduplication)
+if args.count == "cluster_id":
+    # fdr = fp / (fp + tp)
+    fpr = fp / (fp + tn)
+    # f1 = (2 * tp) / (2 * tp + fp + fn)
+    # acc = (tp + tn) / (tp + tn + fp + fn)
+    precision = tp / (tp + fp)
+    # recall = tp / (tp + fn)
+    # specificity = tn / (tn + fp)
+    frustration_risk = fp / (tp + tn + fp + fn)
 
-print(
-    f"FPR,{fpr:.2%},\nPrecision,{precision:.2%},\n"
-    f"Cx. Frustration Risk,{frustration_risk:.2%},"
-)
+    print(
+        f"FPR,{fpr:.2%},\nPrecision,{precision:.2%},\n"
+        f"Cx. Frustration Risk,{frustration_risk:.2%},"
+    )
 
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:
