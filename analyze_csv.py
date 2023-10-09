@@ -65,13 +65,13 @@ arg_parser.add_argument(
 arg_parser.add_argument(
     "--count",
     type=str,
-    choices=["cluster_id", "aws_account_id", "subnet_id_set"],
+    choices=["cluster_id", "subnet_id_set"],
     help=(
         "set the basic counting unit. By default, we count 2+ verifier records tagged "
         "with the same cluster ID as a single 'sample' after deduplication. Setting "
         "this to anything other than cluster_id will trigger a second round of "
         "deduplication where, for example, 2+ verifier records associated with the "
-        "same AWS account ID AND OUTCOME (e.g., false positive) will be counted as "
+        "same set of subnet IDs AND OUTCOME (e.g., false positive) will be counted as "
         "one 'sample'"
     ),
     default="cluster_id",
@@ -155,10 +155,6 @@ if args.count == "subnet_id_set":
         for o, cvr_list in outcomes.items()
     }
     unit_friendly_name = "Subnet ID Sets"
-if args.count == "aws_account_id":
-    # TODO outcomes_view becomes a dict of sets AWS account IDs (keys unchanged)
-    unit_friendly_name = "AWS Account IDs"
-    raise NotImplementedError()
 
 
 # Statistical Measures

@@ -113,9 +113,6 @@ class ClusterVerifierRecord:
         # organization_id will keep track of this cluster owners's OCM org ID
         self._organization_id = None
 
-        # aws_account_id will keep track of this cluster's AWS account ID
-        self._aws_account_id = None
-
         # subnet_id_set will keep track of the subnets associated with this cluster
         # according to OCM. May include subnets not tested by the verifier
         self._subnet_id_set = None
@@ -238,16 +235,6 @@ class ClusterVerifierRecord:
                 pass
         return self._subnet_id_set
 
-    def get_aws_account_id(self) -> str:
-        """
-        Parses the OCM description file stored in log_download_url and returns the AWS
-        account ID into which this cluster was installed
-        May return None if OCM description file is unreadable/missing.
-        """
-        # TODO
-        if self._aws_account_id is None:
-            raise NotImplementedError()
-
     def is_hostedcluster(self) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
@@ -314,8 +301,6 @@ class ClusterVerifierRecord:
             greater_cvr._organization_id = lesser_cvr._organization_id
         if greater_cvr._desc is None:
             greater_cvr._desc = lesser_cvr._desc
-        if greater_cvr._aws_account_id is None:
-            greater_cvr._aws_account_id = lesser_cvr._aws_account_id
         if greater_cvr._subnet_id_set is None:
             greater_cvr._subnet_id_set = lesser_cvr._subnet_id_set
 
