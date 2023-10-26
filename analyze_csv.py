@@ -62,6 +62,20 @@ arg_parser.add_argument(
     help="ignore data collected after ISO8601_DATETIME (assumed UTC)",
     default=datetime.isoformat(datetime.max),
 )
+arg_parser.add_argument(
+    "--count",
+    type=str,
+    choices=["cluster_id", "subnet_id_set"],
+    help=(
+        "set the basic counting unit. By default, we count 2+ verifier records tagged "
+        "with the same cluster ID as a single 'sample' after deduplication. Setting "
+        "this to anything other than cluster_id will trigger a second round of "
+        "deduplication where, for example, 2+ verifier records associated with the "
+        "same set of subnet IDs AND OUTCOME (e.g., false positive) will be counted as "
+        "one 'sample'"
+    ),
+    default="cluster_id",
+)
 args = arg_parser.parse_args()
 since_dt = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
 until_dt = datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc)
@@ -118,9 +132,6 @@ if args.internal_cx is not None:
             "to determine owner"
         )
 
-
-print(f"Total Clusters,{len(cvrs)},")
-
 # Create a dict of empty lists where every enumerated value of Outcome becomes a key
 outcomes = {o: [] for o in Outcome}
 
@@ -132,33 +143,54 @@ for _, cvr in cvrs.items():
         # We might hit this for NoneType outcomes
         outcomes[cvr.get_outcome()] = [cvr]
 
+# Deduplicate again based on the value of --count
+if args.count == "cluster_id":
+    # No further deduplication needed
+    outcomes_view = outcomes
+    unit_friendly_name = "Clusters"
+if args.count == "subnet_id_set":
+    # outcomes_view becomes a dict of sets of frozensets of subnet IDs (keys unchanged)
+    outcomes_view = {
+        o: {cvr.get_subnet_id_set() for cvr in cvr_list}
+        for o, cvr_list in outcomes.items()
+    }
+    unit_friendly_name = "Subnet ID Sets"
+    print(
+        "INFO: performance metrics (e.g., FPR, precision) will NOT be calculated, "
+        "as they're invalid/meaningless when deduplicating by network (--count=subnet_id_sets)"
+    )
+
 
 # Statistical Measures
 # See https://en.wikipedia.org/wiki/Sensitivity_and_specificity
-tp = len(outcomes[Outcome.TRUE_POSITIVE])
-tn = len(outcomes[Outcome.TRUE_NEGATIVE])
-fn = len(outcomes[Outcome.FALSE_NEGATIVE])
-fp = len(outcomes[Outcome.FALSE_POSITIVE])
-errors = len(outcomes[Outcome.ERROR])
+tp = len(outcomes_view[Outcome.TRUE_POSITIVE])
+tn = len(outcomes_view[Outcome.TRUE_NEGATIVE])
+fn = len(outcomes_view[Outcome.FALSE_NEGATIVE])
+fp = len(outcomes_view[Outcome.FALSE_POSITIVE])
+errors = len(outcomes_view[Outcome.ERROR])
 
+print(f"Total {unit_friendly_name},{tp + tn + fn + fp + errors},")
 print(
     f"True Negatives,{tn},\nFalse Negatives,{fn},\nTrue Positives,{tp},\n"
     f"False Positives,{fp},\nErrors,{errors},"
 )
 
-# fdr = fp / (fp + tp)
-fpr = fp / (fp + tn)
-# f1 = (2 * tp) / (2 * tp + fp + fn)
-# acc = (tp + tn) / (tp + tn + fp + fn)
-precision = tp / (tp + fp)
-# recall = tp / (tp + fn)
-# specificity = tn / (tn + fp)
-frustration_risk = fp / (tp + tn + fp + fn)
+# Calculate metrics only if counting cluster IDs (other units produce
+# meaningless/statistically-invalid numbers due to deduplication)
+if args.count == "cluster_id":
+    # fdr = fp / (fp + tp)
+    fpr = fp / (fp + tn)
+    # f1 = (2 * tp) / (2 * tp + fp + fn)
+    # acc = (tp + tn) / (tp + tn + fp + fn)
+    precision = tp / (tp + fp)
+    # recall = tp / (tp + fn)
+    # specificity = tn / (tn + fp)
+    frustration_risk = fp / (tp + tn + fp + fn)
 
-print(
-    f"FPR,{fpr:.2%},\nPrecision,{precision:.2%},\n"
-    f"Cx. Frustration Risk,{frustration_risk:.2%},"
-)
+    print(
+        f"FPR,{fpr:.2%},\nPrecision,{precision:.2%},\n"
+        f"Cx. Frustration Risk,{frustration_risk:.2%},"
+    )
 
 fp_endpoints = {}
 for cvr in outcomes[Outcome.FALSE_POSITIVE]:

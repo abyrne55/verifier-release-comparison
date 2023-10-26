@@ -103,14 +103,19 @@ class ClusterVerifierRecord:
         self.found_egress_failures = found_egress_failures
         self.log_download_url = log_download_url
 
-        # __logs will keep cache downloaded logs
+        # __logs and _desc will cache downloaded logs/OCM descriptions
         self.__logs = {}
+        self._desc = None
 
         # hostedcluster will keep track of this cluster's hypershift status
         self._hostedcluster = None
 
         # organization_id will keep track of this cluster owners's OCM org ID
         self._organization_id = None
+
+        # subnet_id_set will keep track of the subnets associated with this cluster
+        # according to OCM. May include subnets not tested by the verifier
+        self._subnet_id_set = None
 
         # reached_states keeps track of all states in which we've seen this cluster
         self.reached_states = set()
@@ -199,14 +204,10 @@ class ClusterVerifierRecord:
         """
         if self._organization_id is None:
             # First fetch the cluster description from the remote log server...
-            desc_req = requests.get(
-                self.log_download_url + "desc.json",
-                timeout=5,
-                auth=self.remote_log_auth,
-            )
+            self.__download_desc()
             # ...and extract a link to the cluster's subscription
             try:
-                subscription_href = desc_req.json()["subscription"]["href"]
+                subscription_href = self._desc["subscription"]["href"]
 
                 # Then fetch the the subscription from OCM...
                 subscription_req = ocm_client.get(subscription_href)
@@ -219,6 +220,21 @@ class ClusterVerifierRecord:
 
         return self._organization_id
 
+    def get_subnet_id_set(self) -> frozenset:
+        """
+        Parses the OCM description file stored in log_download_url and returns the set
+        of subnet IDs into which this cluster was installed
+        May return None if OCM description file is unreadable/missing.
+        """
+        if self._subnet_id_set is None:
+            try:
+                self.__download_desc()
+                self._subnet_id_set = frozenset(self._desc["aws"]["subnet_ids"])
+            except (requests.exceptions.JSONDecodeError, KeyError):
+                # Malformed OCM response JSON or recv'd a 404. Allow default to None
+                pass
+        return self._subnet_id_set
+
     def is_hostedcluster(self) -> bool:
         """
         Parses the OCM description file stored in log_download_url and returns True if
@@ -227,17 +243,27 @@ class ClusterVerifierRecord:
         """
         if self._hostedcluster is None:
             # HCP status not cached for this cluster ID
+            try:
+                self.__download_desc()
+                self._hostedcluster = bool(self._desc["hypershift"]["enabled"])
+            except (requests.exceptions.JSONDecodeError, KeyError):
+                # Blank/malformed cluster description JSON. Allow default to None
+                pass
+        return self._hostedcluster
+
+    def __download_desc(self):
+        """
+        Downloads the OCM description file stored in log_download_url and populates
+        __desc with arrays extracted from the JSON. Will throw
+        requests.exceptions.JSONDecodeError if description file is missing or malformed
+        """
+        if not self._desc:
             desc_req = requests.get(
                 self.log_download_url + "desc.json",
                 timeout=5,
                 auth=self.remote_log_auth,
             )
-            try:
-                self._hostedcluster = bool(desc_req.json()["hypershift"]["enabled"])
-            except requests.exceptions.JSONDecodeError:
-                # Blank/malformed cluster description JSON. Allow default to None
-                pass
-        return self._hostedcluster
+            self._desc = desc_req.json()
 
     def __download_logs(self):
         """
@@ -273,6 +299,10 @@ class ClusterVerifierRecord:
             greater_cvr._hostedcluster = lesser_cvr._hostedcluster
         if greater_cvr._organization_id is None:
             greater_cvr._organization_id = lesser_cvr._organization_id
+        if greater_cvr._desc is None:
+            greater_cvr._desc = lesser_cvr._desc
+        if greater_cvr._subnet_id_set is None:
+            greater_cvr._subnet_id_set = lesser_cvr._subnet_id_set
 
         return greater_cvr
 

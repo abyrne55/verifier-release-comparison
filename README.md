@@ -37,4 +37,28 @@ timestamp,cid,cname,ocm_state,ocm_inflight_states,found_verifier_s3_logs,found_a
 2023-07-14T20:30:04Z,101010101opqrstuv,,,NULL,TRUE,TRUE,FALSE,https://example.com/logs/EA1oo5DpoY/,
 2023-07-14T20:30:05Z,987654321hijklmn,uncool-cluster,error,"[""failed""]",TRUE,FALSE,TRUE,https://example.com/logs/IEdH0dSS87/,
 ```
-Then run `make build test` to build and run a UBI9 container image containing the tool. If you'd rather not use Docker/Podman, you can also run the script directly using Python 3.9: `python3 analyze_csv.py test.csv`
+Then copy `settings.py.template` to `settings.py` and adjust settings according to your needs. Finally, run `make build test` to build and run a UBI9 container image containing the tool. If you'd rather not use Docker/Podman, you can also run the script directly using Python 3.9: `python3 analyze_csv.py test.csv`. Note that you may need to run `pip3 install -r requirements.txt` first.
+
+Run `python3 analyze_csv.py --help` for more details on runtime options.
+```
+$ python3 analyze_csv.py --help
+usage: analyze_csv.py [-h] [--hcp | --no-hcp] [--internal-cx | --no-internal-cx] [--since ISO8601_DATETIME] [--until ISO8601_DATETIME] csv_file
+
+Analyze CSVs produced by verifier_log_cronjob.sh and print the results
+
+positional arguments:
+  csv_file              path to the CSV file under analysis
+
+options:
+  -h, --help            show this help message and exit
+  --hcp, --no-hcp       analyze ONLY data generated from HyperShift/HCP HostedClusters. Conversely, --no-hcp excludes all HostedCluster data. Set neither of these to analyze all data. NOTE: setting
+                        either flag will cause an extra HTTP request percluster ID, likely slowing processing considerably
+  --internal-cx, --no-internal-cx
+                        analyze ONLY data generated from internal customers' clusters. Conversely, --no-internal-cx only analyzes data from external customers' clusters. Set neither of these to analyze
+                        all data. NOTE: setting either flag will cause 2-3 extra HTTP requests per cluster ID, heavily slowing processing. Also, the OCM_CONFIG environmental variable must point to a
+                        valid OCM credentialsfile
+  --since ISO8601_DATETIME
+                        ignore data collected before ISO8601_DATETIME (assumed UTC)
+  --until ISO8601_DATETIME
+                        ignore data collected after ISO8601_DATETIME (assumed UTC)
+```
