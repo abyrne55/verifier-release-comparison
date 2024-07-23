@@ -17,4 +17,4 @@ Scripts for comparing logs of old and new osd-network-verifier releases
   "output": "execution output string"
 }
 ```
-Then run `make build test` to build and run a UBI9 container image containing the tool. If you'd rather not use Docker/Podman, you can also run the script directly using Python 3.9: `python3 analyze_json.py test.json`
+Then run `make build test` to build and run a UBI9 container image containing the tool. If you'd rather not use Docker/Podman, you can also run the script directly using Python 3.12: `python3 analyze_json.py test.json`
