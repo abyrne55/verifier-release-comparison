@@ -6,9 +6,6 @@ import re
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2 import TokenExpiredError
 
-from settings import INTERNAL_CUSTOMER_REGEX_PATTERN
-
-
 class OCMClient:
     """
     Read-only OCM API client. Loads credentials from file specified by environmental
@@ -83,11 +80,3 @@ def is_valid_url(url):
         re.IGNORECASE,
     )
     return bool(url is not None and regex.search(url))
-
-
-def is_internal_customer(ocm_client: OCMClient, organization_id: str) -> bool:
-    """Queries OCM and returns True if an organization ID looks like an internal cluster"""
-    org_resp = ocm_client.get("/api/accounts_mgmt/v1/organizations/" + organization_id)
-    org_name = org_resp.json()["name"]
-    regex = re.compile(INTERNAL_CUSTOMER_REGEX_PATTERN, re.IGNORECASE)
-    return bool(organization_id is not None and regex.search(org_name))
