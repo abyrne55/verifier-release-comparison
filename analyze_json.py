@@ -3,18 +3,8 @@ import argparse
 import csv
 import sys
 from datetime import datetime, timezone
-from requests_cache import install_cache, NEVER_EXPIRE
-
-# Enable HTTP caching globally before importing network-using modules
-install_cache(
-    ".vla-http-cache",
-    backend="sqlite",
-    expire_after=NEVER_EXPIRE,
-    allowable_methods=["GET"],
-)
-# pylint: disable=wrong-import-position, C0103
-from models import ClusterVerifierRecord, Outcome
-from util import OCMClient, is_internal_customer
+from models import ClusterVerifierRecord
+from util import OCMClient
 
 # Parse command line arguments
 arg_parser = argparse.ArgumentParser(
@@ -34,18 +24,6 @@ arg_parser.add_argument(
         "--no-hcp excludes all HostedCluster data. Set neither of these to analyze "
         "all data. NOTE: setting either flag will cause an extra HTTP request per"
         "cluster ID, likely slowing processing considerably"
-    ),
-)
-arg_parser.add_argument(
-    "--internal-cx",
-    action=argparse.BooleanOptionalAction,
-    help=(
-        "analyze ONLY data generated from internal customers' clusters. Conversely, "
-        "--no-internal-cx only analyzes data from external customers' clusters. Set "
-        "neither of these to analyze all data. NOTE: setting either flag will cause "
-        "2-3 extra HTTP requests per cluster ID, heavily slowing processing. Also, "
-        "the OCM_CONFIG environmental variable must point to a valid OCM credentials"
-        "file"
     ),
 )
 arg_parser.add_argument(

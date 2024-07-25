@@ -2,7 +2,7 @@
 
 # Regular expression to use for capturing failed egress endpoints (should have a single
 # capturing group)
-EGRESS_URL_REGEX_PATTERN = r"egressURL error\: ([\w\-\.]+\:\d+)\n"
+EGRESS_URL_REGEX_PATTERN = r"egressURL error\: (?:[a-z]{3,5}:\/\/)?([\w\-\.]+\:\d+)\s"
 
 # Regular expression to use for capturing other runtime errors (should have a single
 # capturing group)
