@@ -116,6 +116,7 @@ class ClusterVerifierRecord:
             "osdctl_version": self.osdctl_version.name,
             "probe": self.probe.name,
             "arch": self.arch.name,
+            "duration": self.duration,
             "errors": self.errors,
             "egress_failures": self.egress_failures,
         }
