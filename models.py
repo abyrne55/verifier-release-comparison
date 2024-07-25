@@ -29,8 +29,9 @@ class Probe(Flag):
 class OSDCTLVersion(Flag):
     """Enumerated versions of osdctl"""
 
-    V0_34 = auto()
-    V0_35 = auto()
+    V0_34_0 = auto()
+    V0_35_0 = auto()
+    B994063A = auto()
 
 
 class ClusterVerifierRecord:
@@ -95,11 +96,17 @@ class ClusterVerifierRecord:
                 "Cannot create ClusterVerifierRecord without an output log"
             )
 
-        _probe = Probe[in_dict["probe"].strip().upper()]
+        p_string = in_dict["probe"].strip().upper()
+        if in_dict["probe"].strip().upper() == "PROBE":
+            p_string = "CURL"
+        _probe = Probe[p_string]
+        
         _arch = CPUArchitecture[in_dict["arch"].strip().upper()]
-        _osdctl_version = OSDCTLVersion[
-            "V" + in_dict["osdctl_version"].strip().replace(".", "_")
-        ]
+
+        v_string = "V" + in_dict["osdctl_version"].strip().replace(".", "_")
+        if len(in_dict["osdctl_version"].strip()) > 8:
+            v_string = in_dict["osdctl_version"][:8].strip().upper()
+        _osdctl_version = OSDCTLVersion[v_string]
 
         return cls(_cid, _duration, _osdctl_version, _probe, _arch, _output)
 
