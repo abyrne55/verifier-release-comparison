@@ -34,5 +34,5 @@ else:
 list_of_cvrs = [models.ClusterVerifierRecord.from_dict(d) for d in list_of_dicts]
 
 df = models.cvrs_to_dataframe(list_of_cvrs)
-print(df.to_csv(index_label="idx"))
+print(df.to_csv(index_label="idx").replace("set()", "{}"))
     
